@@ -342,6 +342,7 @@ there is no system with this name in the registry."
   "Load all the components of a system."
   (declare (type string name))
   (let ((system (find-system name)))
+    (mapc #'load-system (system-dependencies system))
     (labels ((load-component-tree (component)
                (build-component component)
                (load-component component)
