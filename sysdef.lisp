@@ -145,19 +145,6 @@
   (print-unreadable-object (system stream :type t)
     (prin1 (system-name system) stream)))
 
-(defun list-system-components (system)
-  "Return a list of all the components of SYSTEM. The list is sorted by ascending
-component path."
-  (declare (type system system))
-  (let ((components nil))
-    (labels ((build-list (component)
-               (mapc #'build-list (component-children component))
-               (push component components)))
-      (mapc #'build-list (system-components system)))
-    (sort components #'string-lessp
-          :key (lambda (component)
-                 (namestring (component-path component))))))
-
 (defvar *component-class-registry* (make-hash-table :test #'equal)
   "The table mapping file types to component classes.")
 
@@ -289,6 +276,19 @@ directory."))
 (defmethod load-component ((component common-lisp-component))
   (load (component-build-path component "fasl")))
 
+(defun list-system-components (system)
+  "Return a list of all the components of SYSTEM. The list is sorted by ascending
+component path."
+  (declare (type system system))
+  (let ((components nil))
+    (labels ((build-list (component)
+               (mapc #'build-list (component-children component))
+               (push component components)))
+      (mapc #'build-list (system-components system)))
+    (sort components #'string-lessp
+          :key (lambda (component)
+                 (namestring (component-path component))))))
+
 (defun normalize-system-name (name)
   "Return the canonical representation of a system name."
   (declare (type string name))
@@ -297,10 +297,21 @@ directory."))
 (defvar *system-directory* nil
   "The current directory while a system manifest is being loaded.")
 
+(defun load-manifest (path)
+  "Load a system manifest file at PATH, evaluating the code it contains.
+Systems defined in the manifest using DEFSYSTEM are added to the registry."
+  (declare (type (or pathname string) path))
+  (let* ((package-name (gensym "SYSTEM-TMP-"))
+         (package (make-package package-name :use '(:cl :sysdef))))
+    (unwind-protect
+         (let ((*package* package))
+           (load path))
+      (delete-package package))))
+
 (defun initialize-registry ()
-  "Locate systems located in directories listed in *SYSTEM-DIRECTORIES*, load and
-validate their definition files and index them in the registry. Systems
-referenced in the registry when the function is called are discarded."
+  "Locate system manifests located in directories listed in *SYSTEM-DIRECTORIES*, load and
+validate them and index systems they define in the registry. Systems referenced
+in the registry when the function is called are discarded."
   (labels ((pathname-directory-p (path)
              (declare (type pathname path))
              (and (null (pathname-name path))
@@ -349,17 +360,6 @@ there is no system with this name in the registry."
                (mapc #'load-component-tree (component-children component))))
       (mapc #'load-component-tree (system-components system)))
     t))
-
-(defun load-manifest (path)
-  "Load a system manifest file at PATH, evaluating the code it contains.
-Systems defined in the manifest using DEFSYSTEM are added to the registry."
-  (declare (type (or pathname string) path))
-  (let* ((package-name (gensym "SYSTEM-TMP-"))
-         (package (make-package package-name :use '(:cl :sysdef))))
-    (unwind-protect
-         (let ((*package* package))
-           (load path))
-      (delete-package package))))
 
 (defmacro defsystem (name &key description
                                homepage
