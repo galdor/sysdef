@@ -234,8 +234,8 @@ there is no system with this name in the registry."
                    (subseq name 0 (1- length))
                    name)))
            (make-component (form directory)
-             (etypecase form
-               (string
+             (cond
+               ((stringp form)
                 (let* ((name form)
                        (path
                          (merge-pathnames (parse-namestring name)
@@ -245,7 +245,9 @@ there is no system with this name in the registry."
                        (class (or (gethash type *component-class-registry*)
                                   'static-file-component)))
                   (make-instance class :name name :path path)))
-               ((cons string list)
+               ((and (consp form)
+                     (stringp (first form))
+                     (listp (second form)))
                 (destructuring-bind (name forms) form
                   (let* ((name (canonicalize-group-name name))
                          (directory-path
@@ -259,7 +261,9 @@ there is no system with this name in the registry."
                     (make-instance 'component-group
                                    :name name
                                    :path directory-path
-                                   :children children)))))))
+                                   :children children))))
+               (t
+                (error "malformed component ~S" form)))))
     (make-component form (list :relative))))
 
 (defgeneric build-component (component)
