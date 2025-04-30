@@ -8,6 +8,16 @@
    #:initialize-registry
    #:*component-class-registry*
    #:register-component-class
+   #:system
+   #:system-directory
+   #:system-name
+   #:system-description
+   #:system-authors
+   #:system-homepage
+   #:system-licenses
+   #:system-version
+   #:system-dependencies
+   #:system-components
    #:defsystem
    #:unknown-system
    #:unknown-system-name
@@ -82,6 +92,21 @@
      (format stream "unknown system ~S"
              (unknown-system-name condition)))))
 
+(deftype version ()
+  "A system version as one of the following forms:
+
+- (<major> <minor> <patch>)
+- (<major> <minor> <patch> <pre-release-type> <pre-release-number>)
+- (dynamic <shell-command>)
+- (custom <version-string>)"
+  '(or
+    (cons (integer 0)                                             ; major
+     (cons (integer 0)                                            ; minor
+      (cons (integer 0)                                           ; patch
+       (or (cons (member :dev :a :b :rc) (cons (integer 1) null)) ; pre-release
+        null))))
+    (cons (member dynamic custom) string)))
+
 (defclass system ()
   ((directory
     :type pathname
@@ -126,24 +151,33 @@
     :initform nil
     :reader system-components)))
 
-(deftype version ()
-  "A system version as one of the following forms:
-
-- (<major> <minor> <patch>)
-- (<major> <minor> <patch> <pre-release-type> <pre-release-number>)
-- (dynamic <shell-command>)
-- (custom <version-string>)"
-  '(or
-    (cons (integer 0)                                             ; major
-     (cons (integer 0)                                            ; minor
-      (cons (integer 0)                                           ; patch
-       (or (cons (member :dev :a :b :rc) (cons (integer 1) null)) ; pre-release
-        null))))
-    (cons (member dynamic custom) string)))
+(deftype system-designator ()
+  '(or system string))
 
 (defmethod print-object ((system system) stream)
   (print-unreadable-object (system stream :type t)
     (prin1 (system-name system) stream)))
+
+(defun normalize-system-name (name)
+  "Return the canonical representation of a system name."
+  (declare (type string name))
+  (string-downcase name))
+
+(defun find-system (name)
+  "Return a system indexed in the registry. Signal an UNKNOWN-SYSTEM condition if
+there is no system with this name in the registry."
+  (declare (type string name))
+  (or (gethash (normalize-system-name name) *registry*)
+      (error 'unknown-system :name name)))
+
+(defun system (system)
+  "Return a system referenced by a system designator."
+  (declare (type system-designator system))
+  (typecase system
+    (system
+     system)
+    (string
+     (find-system system))))
 
 (defvar *component-class-registry* (make-hash-table :test #'equal)
   "The table mapping file types to component classes.")
@@ -289,11 +323,6 @@ component path."
           :key (lambda (component)
                  (namestring (component-path component))))))
 
-(defun normalize-system-name (name)
-  "Return the canonical representation of a system name."
-  (declare (type string name))
-  (string-downcase name))
-
 (defvar *system-directory* nil
   "The current directory while a system manifest is being loaded.")
 
@@ -333,13 +362,6 @@ in the registry when the function is called are discarded."
     (mapc #'find-manifests *system-directories*)
     t))
 
-(defun find-system (name)
-  "Return a system indexed in the registry. Signal an UNKNOWN-SYSTEM condition if
-there is no system with this name in the registry."
-  (declare (type string name))
-  (or (gethash (normalize-system-name name) *registry*)
-      (error 'unknown-system :name name)))
-
 (defun list-systems ()
   "Return a list of all systems in the registry."
   (let ((systems nil))
@@ -349,10 +371,10 @@ there is no system with this name in the registry."
              *registry*)
     systems))
 
-(defun load-system (name)
+(defun load-system (system)
   "Load all the components of a system."
-  (declare (type string name))
-  (let ((system (find-system name)))
+  (declare (type system-designator system))
+  (let ((system (system system)))
     (mapc #'load-system (system-dependencies system))
     (labels ((load-component-tree (component)
                (build-component component)
