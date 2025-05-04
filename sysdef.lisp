@@ -202,6 +202,11 @@ there is no system with this name in the registry."
     :type pathname
     :initarg :path
     :reader component-path)
+   (generator
+    :type list
+    :initarg :generator
+    :initform nil
+    :reader component-generator)
    (system
     :type system
     :accessor component-system)))
@@ -241,24 +246,16 @@ there is no system with this name in the registry."
                    name)))
            (make-component (form directory)
              (cond
-               ((stringp form)
-                (let* ((name form)
-                       (path
-                         (merge-pathnames (parse-namestring name)
-                                          (make-pathname :directory
-                                                         (reverse directory))))
-                       (type (pathname-type path))
-                       (class (or (gethash type *component-class-registry*)
-                                  'static-file-component)))
-                  (make-instance class :name name :path path)))
+               ;; (NAME (FILE1 FILE2 ...))
                ((and (consp form)
                      (stringp (first form))
-                     (listp (second form)))
+                     (listp (second form))
+                     (not (null (second form))))
                 (destructuring-bind (name forms) form
                   (let* ((name (canonicalize-group-name name))
                          (directory-path
-                           (make-pathname
-                            :directory (reverse (cons name directory))))
+                          (make-pathname
+                           :directory (reverse (cons name directory))))
                          (children (mapcar
                                     (lambda (form)
                                       (make-component
@@ -268,9 +265,44 @@ there is no system with this name in the registry."
                                    :name name
                                    :path directory-path
                                    :children children))))
+               ;; NAME
+               ((stringp form)
+                (make-component (list form) directory))
+               ;; (NAME [KEY1 ARG1 KEY2 ARG2 ...])
+               ((stringp (car form))
+                (let* ((name (car form))
+                       (args (cdr form))
+                       (path
+                        (merge-pathnames (parse-namestring name)
+                                         (make-pathname :directory
+                                                        (reverse directory))))
+                       (type (pathname-type path))
+                       (class (or (gethash type *component-class-registry*)
+                                  'static-file-component)))
+                  (destructuring-bind (&key generator) args
+                    (make-instance class :name name :path path
+                                         :generator generator))))
                (t
                 (error "malformed component ~S" form)))))
     (make-component form (list :relative))))
+
+(defgeneric generate-component (component)
+  (:method ((component component))
+    (with-slots (generator) component
+      (when generator
+        (destructuring-bind (package function-symbol &rest args) generator
+          (let* ((function
+                   (or (find-symbol (string function-symbol) package)
+                       (error "generation function ~A not found in package ~A"
+                              function-symbol package)))
+                 (file-type (pathname-type (component-path component)))
+                 (path
+                   (ensure-component-build-path-exists component file-type)))
+            (with-open-file (stream path :direction :output
+                                         :if-exists :supersede
+                                         :if-does-not-exist :create)
+              (let ((*standard-output* stream))
+                (apply function args)))))))))
 
 (defgeneric build-component (component)
   (:method ((component component))
@@ -307,9 +339,28 @@ directory."))
 
 (register-component-class "lisp" 'common-lisp-component)
 
+(define-condition common-lisp-file-compilation-failure (error)
+  ((source-path
+    :type (or pathname string)
+    :initarg :source-path
+    :reader common-lisp-file-compilation-failure))
+  (:report
+   (lambda (condition stream)
+     (format stream "cannot compile ~S"
+             (common-lisp-file-compilation-failure condition)))))
+
 (defmethod build-component ((component common-lisp-component))
-  (let ((fasl-path (ensure-component-build-path-exists component "fasl")))
-    (compile-file (component-absolute-path component) :output-file fasl-path)))
+  (let ((source-path (if (component-generator component)
+                         (component-build-path component "lisp")
+                         (component-absolute-path component)))
+        (fasl-path (ensure-component-build-path-exists component "fasl")))
+    (multiple-value-bind (fasl-path-truename warnings failure)
+        (compile-file source-path :output-file fasl-path)
+      (declare (ignore fasl-path-truename)
+               (ignore warnings))
+      (when failure
+        (error 'common-lisp-file-compilation-failure
+               :source-path source-path)))))
 
 (defmethod load-component ((component common-lisp-component))
   (load (component-build-path component "fasl")))
