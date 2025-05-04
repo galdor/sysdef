@@ -318,18 +318,22 @@ directory."))
 (defmethod load-component ((component common-lisp-component))
   (load (component-build-path component "fasl")))
 
+(defmacro do-system-components ((component system &optional result-form)
+                                &body body)
+  (let ((system-var (gensym "SYSTEM-")))
+    `(let ((,system-var ,system))
+       (labels ((iterate (,component)
+                  ,@body
+                  (mapc #'iterate (component-children ,component))))
+         (dolist (,component (system-components ,system-var) ,result-form)
+           (iterate ,component))))))
+
 (defun list-system-components (system)
-  "Return a list of all the components of SYSTEM. The list is sorted by ascending
-component path."
-  (declare (type system system))
+  "Return a list of all the components of SYSTEM. The order of the list corresponds
+to a deep-first search of the component tree."
   (let ((components nil))
-    (labels ((build-list (component)
-               (mapc #'build-list (component-children component))
-               (push component components)))
-      (mapc #'build-list (system-components system)))
-    (sort components #'string-lessp
-          :key (lambda (component)
-                 (namestring (component-path component))))))
+    (do-system-components (component (system system) (nreverse components))
+      (push component components))))
 
 (defvar *system-directory* nil
   "The current directory while a system manifest is being loaded.")
@@ -384,12 +388,10 @@ in the registry when the function is called are discarded."
   (declare (type system-designator system))
   (let ((system (system system)))
     (mapc #'load-system (system-dependencies system))
-    (labels ((load-component-tree (component)
-               (build-component component)
-               (load-component component)
-               (mapc #'load-component-tree (component-children component))))
-      (mapc #'load-component-tree (system-components system)))
-    t))
+    (do-system-components (component system)
+      (generate-component component)
+      (build-component component)
+      (load-component component))))
 
 (defmacro defsystem (name &key description
                                homepage
@@ -419,7 +421,7 @@ in the registry when the function is called are discarded."
                                             :version ',version
                                             :dependencies ',dependencies
                                             :components ,component-objects)))
-       (dolist (,component ,component-objects)
+       (do-system-components (,component ,system)
          (setf (component-system ,component) ,system))
        (setf (gethash  (system-name ,system) *registry*) ,system)
        ,system)))
