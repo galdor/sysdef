@@ -18,6 +18,8 @@
    #:system-version
    #:system-dependencies
    #:system-components
+   #:list-system-components
+   #:system-file-path
    #:defsystem
    #:unknown-system
    #:unknown-system-name
@@ -334,6 +336,10 @@ to a deep-first search of the component tree."
   (let ((components nil))
     (do-system-components (component (system system) (nreverse components))
       (push component components))))
+
+(defun system-file-path (system subpath)
+  "Return the absolute pathname of a file in the directory of a system."
+  (merge-pathnames subpath (system-directory (system system))))
 
 (defvar *system-directory* nil
   "The current directory while a system manifest is being loaded.")
