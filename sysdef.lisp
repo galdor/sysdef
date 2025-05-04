@@ -216,9 +216,13 @@ there is no system with this name in the registry."
 (defun component-build-path (component file-type)
   (declare (type component component)
            (type string file-type))
-  (let ((filename (make-pathname :defaults (component-path component)
-                                 :type file-type)))
-    (merge-pathnames filename *build-directory*)))
+  (let* ((filename (make-pathname :defaults (component-path component)
+                                  :type file-type))
+         (system-name (system-name (component-system component)))
+         (system-directory
+           (merge-pathnames (make-pathname :directory `(:relative ,system-name))
+                            *build-directory*)))
+    (merge-pathnames filename system-directory)))
 
 (defun ensure-component-build-path-exists (component file-type)
   (let ((path (component-build-path component file-type)))
