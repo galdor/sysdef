@@ -346,6 +346,9 @@ directory."))
 
 (register-component-class "lisp" 'common-lisp-component)
 
+(defparameter *common-lisp-fasl-file-type*
+  (pathname-type (compile-file-pathname "file.lisp")))
+
 (define-condition common-lisp-file-compilation-failure (error)
   ((source-path
     :type (or pathname string)
@@ -358,7 +361,8 @@ directory."))
 
 (defmethod build-component ((component common-lisp-component))
   (let ((source-path (component-source-path component "lisp"))
-        (fasl-path (ensure-component-build-path-exists component "fasl")))
+        (fasl-path (ensure-component-build-path-exists
+                    component *common-lisp-fasl-file-type*)))
     (multiple-value-bind (fasl-path-truename warnings failure)
         (compile-file source-path :output-file fasl-path)
       (declare (ignore fasl-path-truename)
@@ -368,7 +372,7 @@ directory."))
                :source-path source-path)))))
 
 (defmethod load-component ((component common-lisp-component))
-  (load (component-build-path component "fasl")))
+  (load (component-build-path component *common-lisp-fasl-file-type*)))
 
 (defmacro do-system-components ((component system &optional result-form)
                                 &body body)
