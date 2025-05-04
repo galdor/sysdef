@@ -298,12 +298,6 @@ process."))
   (:documentation "A group of components whose source files are stored in a
 directory."))
 
-(defmethod build-component ((component component-group))
-  (mapc 'build-component (component-group-children component)))
-
-(defmethod load-component ((component component-group))
-  (mapc 'load-component (component-group-children component)))
-
 (defmethod component-children ((component component-group))
   (component-group-children component))
 
