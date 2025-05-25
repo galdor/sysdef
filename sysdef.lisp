@@ -451,7 +451,7 @@ in the registry when the function is called are discarded."
                (declare (ignore name))
                (push system systems))
              *registry*)
-    systems))
+    (sort systems #'string-lessp :key 'system-name)))
 
 (defun load-system (system)
   "Load all the components of a system."
