@@ -354,23 +354,32 @@ directory."))
   ((source-path
     :type (or pathname string)
     :initarg :source-path
-    :reader common-lisp-file-compilation-failure))
+    :reader common-lisp-file-compilation-failure-source-path)
+   (error-output
+    :type string
+    :initarg :error-output
+    :reader common-lisp-file-compilation-failure-error-output))
   (:report
    (lambda (condition stream)
-     (format stream "cannot compile ~S"
-             (common-lisp-file-compilation-failure condition)))))
+     (format stream "cannot compile ~S:~%~@<  ~@;~A~:>~%"
+             (common-lisp-file-compilation-failure-source-path condition)
+             (common-lisp-file-compilation-failure-error-output condition)))))
 
 (defmethod build-component ((component common-lisp-component))
   (let ((source-path (component-source-path component "lisp"))
         (fasl-path (ensure-component-build-path-exists
-                    component *common-lisp-fasl-file-type*)))
-    (multiple-value-bind (fasl-path-truename warnings failure)
-        (compile-file source-path :output-file fasl-path)
-      (declare (ignore fasl-path-truename)
-               (ignore warnings))
+                    component *common-lisp-fasl-file-type*))
+        (fasl-path-truename nil)
+        (warnings nil)
+        (failure nil))
+    (let ((error-output
+            (with-output-to-string (*error-output*)
+              (multiple-value-setq (fasl-path-truename warnings failure)
+                  (compile-file source-path :output-file fasl-path)))))
       (when failure
         (error 'common-lisp-file-compilation-failure
-               :source-path source-path)))))
+               :source-path source-path
+               :error-output error-output)))))
 
 (defmethod load-component ((component common-lisp-component))
   (load (component-build-path component *common-lisp-fasl-file-type*)))
