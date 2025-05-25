@@ -254,7 +254,8 @@ there is no system with this name in the registry."
            (make-component (form directory)
              (cond
                ;; (NAME (FILE1 FILE2 ...))
-               ((and (consp form)
+               ((and (listp form)
+                     (= (length form) 2)
                      (stringp (first form))
                      (listp (second form))
                      (not (null (second form))))
