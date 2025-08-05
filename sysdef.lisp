@@ -109,6 +109,18 @@
         null))))
     (cons (member dynamic custom) string)))
 
+(deftype function-call ()
+  '(cons symbol (cons symbol list)))
+
+(defun execute-function-call (call)
+  (declare (type function-call call))
+  (destructuring-bind (package function-symbol &rest arguments) call
+    (let ((function
+            (or (find-symbol (string function-symbol) package)
+                (error "function ~A not found in package ~A"
+                       function-symbol package))))
+      (apply function arguments))))
+
 (defclass system ()
   ((directory
     :type pathname
@@ -203,7 +215,7 @@ there is no system with this name in the registry."
     :initarg :path
     :reader component-path)
    (generator
-    :type list
+    :type (or function-call null)
     :initarg :generator
     :initform nil
     :reader component-generator)
@@ -298,19 +310,13 @@ there is no system with this name in the registry."
   (:method ((component component))
     (with-slots (generator) component
       (when generator
-        (destructuring-bind (package function-symbol &rest args) generator
-          (let* ((function
-                   (or (find-symbol (string function-symbol) package)
-                       (error "generation function ~A not found in package ~A"
-                              function-symbol package)))
-                 (file-type (pathname-type (component-path component)))
-                 (path
-                   (ensure-component-build-path-exists component file-type)))
-            (with-open-file (stream path :direction :output
-                                         :if-exists :supersede
-                                         :if-does-not-exist :create)
-              (let ((*standard-output* stream))
-                (apply function args)))))))))
+        (let* ((file-type (pathname-type (component-path component)))
+               (path (ensure-component-build-path-exists component file-type)))
+          (with-open-file (stream path :direction :output
+                                       :if-exists :supersede
+                                       :if-does-not-exist :create)
+            (let ((*standard-output* stream))
+              (execute-function-call generator))))))))
 
 (defgeneric build-component (component)
   (:method ((component component))
