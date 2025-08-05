@@ -263,6 +263,25 @@ there is no system with this name in the registry."
                         (char= (char name (1- length)) #\/))
                    (subseq name 0 (1- length))
                    name)))
+           (component-name (name type-expr)
+             (declare (type string name)
+                      (type (or string function-call null) type-expr))
+             ;; Component names are provided as filenames with or without
+             ;; extension. The :COMPONENT-TYPE component argument (either a
+             ;; string or a (<PACKAGE> <FUNCTION> &REST <ARGUMENTS>) form) is
+             ;; used to override the extension, which is useful for dynamic file
+             ;; extensions (e.g. shared libraries, where the extension depends
+             ;; on the platform).
+             (let* ((path (parse-namestring name))
+                    (type (cond
+                            ((null type-expr)
+                             (pathname-type path))
+                            ((stringp type-expr)
+                             type-expr)
+                            ((listp type-expr)
+                             (execute-function-call type-expr)))))
+               (namestring
+                (make-pathname :defaults path :type type))))
            (make-component (form directory)
              (cond
                ;; (NAME (FILE1 FILE2 ...))
@@ -274,8 +293,8 @@ there is no system with this name in the registry."
                 (destructuring-bind (name forms) form
                   (let* ((name (canonicalize-group-name name))
                          (directory-path
-                          (make-pathname
-                           :directory (reverse (cons name directory))))
+                           (make-pathname
+                            :directory (reverse (cons name directory))))
                          (children (mapcar
                                     (lambda (form)
                                       (make-component
@@ -291,17 +310,18 @@ there is no system with this name in the registry."
                ;; (NAME [KEY1 ARG1 KEY2 ARG2 ...])
                ((stringp (car form))
                 (let* ((name (car form))
-                       (args (cdr form))
-                       (path
-                        (merge-pathnames (parse-namestring name)
-                                         (make-pathname :directory
-                                                        (reverse directory))))
-                       (type (pathname-type path))
-                       (class (or (gethash type *component-class-registry*)
-                                  'static-file-component)))
-                  (destructuring-bind (&key generator) args
-                    (make-instance class :name name :path path
-                                         :generator generator))))
+                       (type (pathname-type (parse-namestring name)))
+                       (arguments (cdr form)))
+                  (destructuring-bind (&key generator component-type) arguments
+                    (let* ((name (component-name name component-type))
+                           (path (merge-pathnames name
+                                                  (make-pathname
+                                                   :directory
+                                                   (reverse directory))))
+                           (class (or (gethash type *component-class-registry*)
+                                      'static-file-component)))
+                      (make-instance class :name name :path path
+                                           :generator generator)))))
                (t
                 (error "malformed component ~S" form)))))
     (make-component form (list :relative))))
