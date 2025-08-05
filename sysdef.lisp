@@ -8,6 +8,13 @@
    #:initialize-registry
    #:*component-class-registry*
    #:register-component-class
+   #:*component*
+   #:component-name
+   #:component-type
+   #:component-path
+   #:component-absolute-path
+   #:component-build-path
+   #:component-source-path
    #:system
    #:system-directory
    #:system-name
@@ -205,6 +212,9 @@ there is no system with this name in the registry."
                              (find-class component-class))))
     (setf (gethash file-type *component-class-registry*) component-class)))
 
+(defvar *component* nil
+  "The component currently being generated, built or loaded.")
+
 (defclass component ()
   ((name
     :type string
@@ -232,6 +242,7 @@ there is no system with this name in the registry."
     (prin1 (component-name component) stream)))
 
 (defun component-absolute-path (component)
+  "Return the absolute path of the component file."
   (declare (type component component))
   (with-slots (path system) component
     (merge-pathnames path (system-directory system))))
@@ -491,9 +502,10 @@ in the registry when the function is called are discarded."
   (let ((system (system system)))
     (mapc #'load-system (system-dependencies system))
     (do-system-components (component system)
-      (generate-component component)
-      (build-component component)
-      (load-component component))))
+      (let ((*component* component))
+        (generate-component component)
+        (build-component component)
+        (load-component component)))))
 
 (defmacro defsystem (name &key description
                                homepage
