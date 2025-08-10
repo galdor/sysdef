@@ -31,7 +31,6 @@
    #:unknown-system
    #:unknown-system-name
    #:list-systems
-   #:find-system
    #:load-system))
 
 (in-package :sysdef)
@@ -184,13 +183,6 @@
   (declare (type string name))
   (string-downcase name))
 
-(defun find-system (name)
-  "Return a system indexed in the registry. Signal an UNKNOWN-SYSTEM condition if
-there is no system with this name in the registry."
-  (declare (type string name))
-  (or (gethash (normalize-system-name name) *registry*)
-      (error 'unknown-system :name name)))
-
 (defun system (system)
   "Return a system referenced by a system designator."
   (declare (type system-designator system))
@@ -198,7 +190,8 @@ there is no system with this name in the registry."
     (system
      system)
     (string
-     (find-system system))))
+     (or (gethash (normalize-system-name system) *registry*)
+         (error 'unknown-system :name system)))))
 
 (defvar *component-class-registry* (make-hash-table :test #'equal)
   "The table mapping file types to component classes.")
