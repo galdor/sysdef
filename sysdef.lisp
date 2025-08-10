@@ -12,7 +12,7 @@
    #:component-name
    #:component-type
    #:component-path
-   #:component-absolute-path
+   #:component-system
    #:component-build-path
    #:component-source-path
    #:system
@@ -241,34 +241,29 @@ there is no system with this name in the registry."
   (print-unreadable-object (component stream :type t)
     (prin1 (component-name component) stream)))
 
-(defun component-absolute-path (component)
-  "Return the absolute path of the component file."
+(defun component-build-directory (component)
   (declare (type component component))
-  (with-slots (path system) component
-    (merge-pathnames path (system-directory system))))
+  (let ((system-name (system-name (component-system component))))
+    (merge-pathnames (make-pathname :directory (list :relative system-name))
+                     *build-directory*)))
 
 (defun component-build-path (component file-type)
+  "Return the absolute path of a component file in the build directory."
   (declare (type component component)
            (type string file-type))
-  (let* ((filename (make-pathname :defaults (component-path component)
-                                  :type file-type))
-         (system-name (system-name (component-system component)))
-         (system-directory
-           (merge-pathnames (make-pathname :directory `(:relative ,system-name))
-                            *build-directory*)))
-    (merge-pathnames filename system-directory)))
+  (let ((filename (make-pathname :defaults (component-path component)
+                                 :type file-type)))
+    (merge-pathnames filename (component-build-directory component))))
 
 (defun component-source-path (component file-type)
+  "Return the absolute path of the source file of the component, i.e. the file that
+will be compiled and loaded."
   (declare (type component component)
            (type string file-type))
   (if (component-generator component)
       (component-build-path component file-type)
-      (component-absolute-path component)))
-
-(defun ensure-component-build-path-exists (component file-type)
-  (let ((path (component-build-path component file-type)))
-    (ensure-directories-exist path)
-    path))
+      (with-slots (path system) component
+        (merge-pathnames path (system-directory system)))))
 
 (defun make-component (form)
   "Create a component object from a component definition form."
@@ -278,27 +273,6 @@ there is no system with this name in the registry."
                         (char= (char name (1- length)) #\/))
                    (subseq name 0 (1- length))
                    name)))
-           (component-type (name type-expr)
-             ;; The :COMPONENT-TYPE component argument (either a string or a
-             ;; (<PACKAGE> <FUNCTION> &REST <ARGUMENTS>) form) is used to
-             ;; override the extension in the component name, which is useful
-             ;; for dynamic file extensions (e.g. shared libraries, where the
-             ;; extension depends on the platform).
-             (cond
-               ((null type-expr)
-                (pathname-type (parse-namestring name)))
-               ((stringp type-expr)
-                type-expr)
-               ((listp type-expr)
-                (execute-function-call type-expr))))
-           (component-name (name type)
-             (declare (type string name)
-                      (type (or string null) type))
-             ;; Component names are provided as filenames with or without
-             ;; extension.
-             (let* ((path (parse-namestring name)))
-               (namestring
-                (make-pathname :defaults path :type type))))
            (make-component (form directory)
              (cond
                ;; (NAME (FILE1 FILE2 ...))
@@ -327,18 +301,16 @@ there is no system with this name in the registry."
                ;; (NAME [KEY1 ARG1 KEY2 ARG2 ...])
                ((stringp (car form))
                 (let* ((name (car form))
-                       (arguments (cdr form)))
-                  (destructuring-bind (&key generator component-type) arguments
-                    (let* ((type (component-type name component-type))
-                           (name (component-name name type))
-                           (path (merge-pathnames name
-                                                  (make-pathname
-                                                   :directory
-                                                   (reverse directory))))
-                           (class (or (gethash type *component-class-registry*)
-                                      'static-file-component)))
-                      (make-instance class :name name :type type :path path
-                                           :generator generator)))))
+                       (arguments (cdr form))
+                       (type (pathname-type (parse-namestring name)))
+                       (class (or (gethash type *component-class-registry*)
+                                  'static-file-component))
+                       (path
+                         (merge-pathnames
+                          name (make-pathname :directory (reverse directory)))))
+                  (destructuring-bind (&key generator) arguments
+                    (make-instance class :name name :type type :path path
+                                         :generator generator))))
                (t
                 (error "malformed component ~S" form)))))
     (make-component form (list :relative))))
@@ -347,13 +319,8 @@ there is no system with this name in the registry."
   (:method ((component component))
     (with-slots (generator) component
       (when generator
-        (let* ((file-type (pathname-type (component-path component)))
-               (path (ensure-component-build-path-exists component file-type)))
-          (with-open-file (stream path :direction :output
-                                       :if-exists :supersede
-                                       :if-does-not-exist :create)
-            (let ((*standard-output* stream))
-              (execute-function-call generator))))))))
+        (ensure-directories-exist (component-build-directory component))
+        (execute-function-call generator)))))
 
 (defgeneric build-component (component)
   (:method ((component component))
@@ -410,15 +377,16 @@ directory."))
 
 (defmethod build-component ((component common-lisp-component))
   (let ((source-path (component-source-path component "lisp"))
-        (fasl-path (ensure-component-build-path-exists
-                    component *common-lisp-fasl-file-type*))
+        (fasl-path
+          (component-build-path component *common-lisp-fasl-file-type*))
         (fasl-path-truename nil)
         (warnings nil)
         (failure nil))
+    (ensure-directories-exist fasl-path)
     (let ((error-output
             (with-output-to-string (*error-output*)
               (multiple-value-setq (fasl-path-truename warnings failure)
-                  (compile-file source-path :output-file fasl-path)))))
+                (compile-file source-path :output-file fasl-path)))))
       (when failure
         (error 'common-lisp-file-compilation-failure
                :source-path source-path
