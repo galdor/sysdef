@@ -16,6 +16,7 @@
    #:component-build-path
    #:component-source-path
    #:system
+   #:system-designator
    #:system-directory
    #:system-name
    #:system-description
