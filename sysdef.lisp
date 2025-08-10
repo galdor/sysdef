@@ -27,6 +27,7 @@
    #:system-dependencies
    #:system-components
    #:list-system-components
+   #:system-component
    #:system-file-path
    #:defsystem
    #:unknown-system
@@ -405,6 +406,19 @@ to a deep-first search of the component tree."
   (let ((components nil))
     (do-system-components (component (system system) (nreverse components))
       (push component components))))
+
+(defun system-component (system component-name-path)
+  (declare (type list component-name-path))
+  (labels ((aux (name-path components)
+             (let* ((name (car name-path))
+                    (child (or (find name components :test #'string=
+                                                     :key 'component-name)
+                               (error "unknown component ~A"
+                                      component-name-path))))
+               (if (null (cdr name-path))
+                   child
+                   (aux (cdr name-path) (component-children child))))))
+    (aux component-name-path (system-components (system system)))))
 
 (defun system-file-path (system subpath)
   "Return the absolute pathname of a file in the directory of a system."
