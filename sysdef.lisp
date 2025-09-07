@@ -245,7 +245,7 @@
 (defun component-build-path (component file-type)
   "Return the absolute path of a component file in the build directory."
   (declare (type component component)
-           (type string file-type))
+           (type (or string null) file-type))
   (let ((filename (make-pathname :defaults (component-path component)
                                  :type file-type)))
     (merge-pathnames filename (component-build-directory component))))
