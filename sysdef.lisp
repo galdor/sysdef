@@ -480,9 +480,24 @@ in the registry when the function is called are discarded."
     (mapc #'load-system (system-dependencies system))
     (do-system-components (component system)
       (let ((*component* component))
-        (generate-component component)
-        (build-component component)
-        (load-component component)))))
+        (macrolet
+            ((with-retry-restart ((action) &body body)
+               `(loop
+                  (restart-case
+                      (return (progn ,@body))
+                    (retry ()
+                      :report
+                      (lambda (stream)
+                        (format stream "Retry ~A system component ~S."
+                                ,action (component-name component)))
+                      nil)))))
+          (with-retry-restart ("processing")
+            (with-retry-restart ("generating")
+              (generate-component component))
+            (with-retry-restart ("building")
+              (build-component component))
+            (with-retry-restart ("loading")
+              (load-component component))))))))
 
 (defmacro defsystem (name &key description
                                homepage
